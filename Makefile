@@ -14,12 +14,12 @@ GIT_REMOTE = jwiegley
 HEAD_DATE  = $(eval HEAD_DATE := $(shell $(GIT_DATE) HEAD))$(HEAD_DATE)
 LKG_DATE   = $(eval LKG_DATE  := $(shell $(GIT_DATE) last-known-good))$(LKG_DATE)
 
-PROJS	   = $(eval PROJS     :=		\
-	$(shell find $(HOME)/src		\
-		     -name .envrc		\
-		  \! -path '*/nix/nixpkgs/*'	\
-		  \! -path '*/notes/gists/*'	\
-		     -type f			\
+PROJS	   = $(eval PROJS     :=					\
+	$(shell find $(HOME)/src $(HOME)/dfinity $(HOME)/Documents	\
+		     -name .envrc					\
+		  \! -path '*/nix/nixpkgs/*'				\
+		  \! -path '*/notes/gists/*'				\
+		     -type f						\
 		     -printf '%h '))$(PROJS)
 
 ifeq ($(NOCACHE),true)
@@ -30,6 +30,7 @@ else
 NIXOPTS	   =
 endif
 NIXPATH	   = $(NIX_PATH):localconfig=$(NIX_CONF)/config/$(HOSTNAME).nix
+NIX	   = PATH=$(BUILD_PATH)/sw/bin:$(PATH) NIX_PATH=$(NIXPATH) nix
 
 BUILD_ARGS = $(NIXOPTS) --keep-going --argstr version $(HEAD_DATE)
 ifeq ($(REALBUILDPATH),true)
@@ -46,7 +47,7 @@ all: rebuild
 
 define make_broadcast
     for host in $(REMOTES); do				\
-	ssh $$host '$(MAKE_REC) HOSTNAME=$$host $(1)';	\
+	ssh $$host "$(MAKE_REC) HOSTNAME=$$host $(1)";	\
     done
 endef
 
@@ -170,19 +171,22 @@ copy-nix:
 copy: copy-nix
 	for host in $(REMOTES); do push -h $(HOSTNAME) -f src $$host; done
 
-copy-shells: copy
-	@for host in $(REMOTES); do						\
-	    PATH=$(BUILD_PATH)/sw/bin:$(PATH)					\
-	    NIX_PATH=$(NIXPATH)							\
-		nix copy --no-check-sigs --keep-going --to ssh://$$host		\
-		$(shell find $(PROJS) -path '*/.direnv/default'			\
-		    | while read dir; do					\
-		      ls $$dir/ | while read file ; do				\
-			  readlink $$dir/$$file;				\
-		      done ;							\
-		      done							\
-		    | sort							\
-		    | uniq);							\
+define find_defaults
+    find $(PROJS) -path '*/.direnv/default'
+endef
+
+defaults:
+	$(find_defaults)
+
+copy-shells:
+	for host in $(REMOTES); do					\
+	    $(NIX) copy --no-check-sigs --keep-going --to ssh://$$host	\
+		$(shell $(find_defaults)				\
+		    | while read dir; do				\
+			  ls $$dir/ | while read file ; do		\
+			      readlink $$dir/$$file;			\
+			  done ;					\
+		      done | sort | uniq);				\
 	done
 
 cache:
